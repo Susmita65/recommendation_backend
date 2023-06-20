@@ -13,6 +13,9 @@ import pickle as pkl
 app = Flask(__name__)
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity, euclidean_distances, manhattan_distances
+from urllib.parse import unquote
 
 
 import numpy as np
@@ -33,7 +36,7 @@ import numpy as np
 from sklearn.metrics import pairwise_distances
 from IPython.display import HTML
 tmdb=TMDb()
-tmdb.api_key='8b5da40bcd2b5fa4afe55c468001ad8a'
+tmdb.api_key='2c5341f7625493017933e27e81b1425e'
 from  tmdbv3api import Movie
 tmdb_movie=Movie()
 df2=pd.read_csv("tmdb_5000_credits.csv")
@@ -209,6 +212,9 @@ def getnewsdata():
 if __name__ == '__main__':
     app.run(debug=True,port=5000)
 
+cosine_simm = 0
+predicted_rate = 0
+
 # CONTENT BASED RECOMMENDATIONS
 def get_recommendations(title, user_id):
     movies_data = pd.read_csv('Main_data.csv')
@@ -246,6 +252,7 @@ def get_recommendations(title, user_id):
         user_ratings = normalized_ratings.loc[user_id].values.reshape(1, -1)
         predicted_ratings = np.dot(user_ratings, item_similarity) / np.sum(item_similarity)
         predicted_ratings = predicted_ratings * (max_rating - min_rating) + min_rating
+
         top_movies_indices = np.argsort(-predicted_ratings)[0][:top_n]
         top_movies = movies_data[movies_data['id'].isin(top_movies_indices)]['title_x']
         return top_movies
@@ -257,6 +264,14 @@ def get_recommendations(title, user_id):
         hybrid_recs = pd.concat([content_based_recs, collaborative_recs])
         return hybrid_recs
     return hybrid_recommendations(user_id, title)
+
+@app.route('/data', methods=['GET'])
+def get_data():
+    response = {
+        'cosine_simm':cosine_simm,
+        'predicted_rate': predicted_rate
+    }
+    return jsonify(response)
 
 #METHOD TO  API CALL ON FRONTEND TO ADD USER ID ALSO
 @app.route('/send/<movie_name>/<string:userId>', methods=["GET"])
@@ -286,4 +301,67 @@ def rate_movie(movieId, rate, userId):
         writer = csv.DictWriter(file, fieldnames=['userId', 'movieId', 'rating'])
         writer.writerow(data)
     return jsonify({'userId': userId, 'movieId': movieId, 'rating': rate})
+
+#API CALL IN FRONTEND IN FORMAT /review/84/This movie is very good/YQ67YHFYTYUHF67686TR7T7T7868
+# @app.route('/review/<movieId>/<String:review>/<string:userId>', methods=["GET"])
+# def review_movie(movieId, review, userId):
+#     import csv
+#     data = {'userId': userId, 'movieId': movieId, 'review': review}
+#     filename = 'IMDB Dataset.csv'
+#     with open(filename, 'a', newline='') as file:
+#         writer = csv.DictWriter(file, fieldnames=['userId', 'movieId', 'review'])
+#         writer.writerow(data)
+#     return jsonify({'userId': userId, 'movieId': movieId, 'review': review})
+
+
+# import csv
+# from flask import jsonify
+
+# @app.route('/store/<movieId>/<string:movie1>/<string:userId>', methods=["GET"])
+# def store_movie(movieId, movie1, userId):
+#     data = {'userId': userId, 'movieId': movieId, 'movie1': movie1}
+#     filename = 'Main_data.csv'
+#     with open(filename, 'a', newline='') as file:
+#         writer = csv.writer(file)
+#         writer.writerow(data.values())
+#     return jsonify(data)
+
+
+
+#API CALL IN FRONTEND IN FORMAT /score/Avatar/Spectre
+from urllib.parse import unquote
+
+@app.route('/score/<path:title1>/<path:title2>/', methods=["GET"])
+def findscore(title1, title2):
+  title1 = unquote(title1)
+  title2 = unquote(title2)
+  movies_data = pd.read_csv('Main_data.csv')
+  movies_data['comb'] = movies_data['title_x'] + movies_data['genres']
+
+  index1 = movies_data[movies_data['title_x'] == title1].index[0]
+  index2 = movies_data[movies_data['title_x'] == title2].index[0]
+
+  # cosine similarity
+  count_vectorizer = CountVectorizer()
+  count_matrix = count_vectorizer.fit_transform(movies_data['comb'])
+  cosine_sim = cosine_similarity(count_matrix, count_matrix)
+  similarity = cosine_sim[index1, index2]
+
+  # manhattan and euclidean distance
+  tfidf = TfidfVectorizer(stop_words='english')
+  tfidf.fit(movies_data['comb'])
+  feature_matrix = tfidf.transform(movies_data['comb']).toarray()
+  movie1_vector = feature_matrix[index1]
+  movie2_vector = feature_matrix[index2]
+  euclidean_distance = euclidean_distances(movie1_vector.reshape(1, -1), movie2_vector.reshape(1, -1))[0][0]
+  manhattan_distance = manhattan_distances(movie1_vector.reshape(1, -1), movie2_vector.reshape(1, -1))[0][0]
+
+  return jsonify({'cosineSimilarity': similarity, 'euclideanDistance': euclidean_distance, 'manhattanDistance': manhattan_distance})
+
+
+
+
+
+
+
 
